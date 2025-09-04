@@ -1,12 +1,9 @@
 package com.example.logipass
 
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,8 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,14 +32,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.logipass.data.VaultRepository
 import com.example.logipass.model.Credential
 import com.example.logipass.model.ServiceItem
+import com.example.logipass.ui.screens.SettingsScreen
 import com.example.logipass.ui.theme.LogiPassTheme
+
+enum class Screen {
+    MAIN, SETTINGS
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,57 +62,57 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppScreen(repo: VaultRepository) {
     var items by remember { mutableStateOf<List<ServiceItem>>(emptyList()) }
-
-    val context = LocalContext.current
+    var currentScreen by remember { mutableStateOf(Screen.MAIN) }
 
     LaunchedEffect(Unit) {
         items = repo.loadFromAppStorage()
-    }
-
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let { selected ->
-            val imported = repo.importFromUri(context.contentResolver, selected)
-            if (imported.isNotEmpty()) items = imported
-        }
-    }
-
-    // CreateDocument contract requires a mimeType up-front
-    val exportLauncher = rememberLauncherForActivityResult(
-        object : ActivityResultContracts.CreateDocument("application/json") {}
-    ) { uri: Uri? ->
-        uri?.let { selected ->
-            repo.exportToUri(context.contentResolver, selected, items)
-        }
     }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("LogiPass") },
-                actions = {
-                    IconButton(onClick = {
-                        // Import JSON
-                        importLauncher.launch(arrayOf("application/json"))
-                    }) {
-                        Icon(Icons.Outlined.FileOpen, contentDescription = "Импорт")
+                title = { 
+                    Text(
+                        when (currentScreen) {
+                            Screen.MAIN -> "LogiPass"
+                            Screen.SETTINGS -> "Настройки"
+                        }
+                    ) 
+                },
+                navigationIcon = {
+                    if (currentScreen == Screen.SETTINGS) {
+                        IconButton(onClick = { currentScreen = Screen.MAIN }) {
+                            Icon(Icons.Outlined.ArrowBack, contentDescription = "Назад")
+                        }
                     }
-                    IconButton(onClick = {
-                        // Export JSON
-                        exportLauncher.launch("logipass.json")
-                    }) {
-                        Icon(Icons.Outlined.FileDownload, contentDescription = "Экспорт")
+                },
+                actions = {
+                    if (currentScreen == Screen.MAIN) {
+                        IconButton(onClick = { currentScreen = Screen.SETTINGS }) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Настройки")
+                        }
                     }
                 }
             )
         }
     ) { innerPadding ->
-        ServiceList(
-            items = items,
-            modifier = Modifier.padding(innerPadding)
-        )
+        when (currentScreen) {
+            Screen.MAIN -> {
+                ServiceList(
+                    items = items,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+            Screen.SETTINGS -> {
+                SettingsScreen(
+                    repo = repo,
+                    items = items,
+                    onItemsUpdated = { newItems -> items = newItems },
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+        }
     }
 }
 
