@@ -82,14 +82,16 @@ import android.widget.Toast
 import com.example.logipass.data.VaultRepository
 import com.example.logipass.model.Credential
 import com.example.logipass.model.ServiceItem
+import com.example.logipass.security.PinManager
 import com.example.logipass.ui.screens.SettingsScreen
+import com.example.logipass.ui.screens.PinAuthScreen
 import com.example.logipass.ui.theme.LogiPassTheme
 import com.example.logipass.ui.components.CredentialDialog
 import com.example.logipass.ui.components.ServiceDialog
 import com.example.logipass.ui.components.ConfirmDialog
 
 enum class Screen {
-    MAIN, SETTINGS
+    PIN_AUTH, PIN_SETUP, MAIN, SETTINGS
 }
 
 class MainActivity : ComponentActivity() {
@@ -97,9 +99,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val repo = VaultRepository(this)
+        val pinManager = PinManager(this)
         setContent {
             LogiPassTheme {
-                AppScreen(repo)
+                AppScreen(repo, pinManager)
             }
         }
     }
@@ -107,13 +110,18 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppScreen(repo: VaultRepository) {
+fun AppScreen(repo: VaultRepository, pinManager: PinManager) {
     var items by remember { mutableStateOf<List<ServiceItem>>(emptyList()) }
-    var currentScreen by remember { mutableStateOf(Screen.MAIN) }
+    var currentScreen by remember { 
+        mutableStateOf(
+            if (pinManager.isPinSet()) Screen.PIN_AUTH else Screen.PIN_SETUP
+        ) 
+    }
     var expandedItems by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var backPressedTime by remember { mutableStateOf(0L) }
     var searchInput by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
+    var isAuthenticated by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -123,12 +131,18 @@ fun AppScreen(repo: VaultRepository) {
     var credentialDialog by remember { mutableStateOf<CredentialDialogState?>(null) }
     var confirmDialog by remember { mutableStateOf<ConfirmDialogState?>(null) }
 
-    LaunchedEffect(Unit) {
-        items = repo.loadFromAppStorage()
+    LaunchedEffect(isAuthenticated) {
+        if (isAuthenticated) {
+            items = repo.loadFromAppStorage()
+        }
     }
 
     BackHandler {
         when (currentScreen) {
+            Screen.PIN_AUTH, Screen.PIN_SETUP -> {
+                (context as? Activity)?.finishAffinity()
+                exitProcess(0)
+            }
             Screen.SETTINGS -> {
                 currentScreen = Screen.MAIN
             }
@@ -192,6 +206,54 @@ fun AppScreen(repo: VaultRepository) {
         visibleIndices.map { idx -> items[idx] }
     }
 
+    // PIN authentication logic
+    fun onPinEntered(pin: String) {
+        if (pinManager.verifyPin(pin)) {
+            isAuthenticated = true
+            currentScreen = Screen.MAIN
+        } else {
+            coroutineScope.launch { 
+                snackbarHostState.showSnackbar("Неверный PIN-код") 
+            }
+        }
+    }
+    
+    fun onPinSetup(pin: String) {
+        if (pinManager.savePin(pin)) {
+            isAuthenticated = true
+            currentScreen = Screen.MAIN
+            coroutineScope.launch { 
+                snackbarHostState.showSnackbar("PIN-код установлен") 
+            }
+        } else {
+            coroutineScope.launch { 
+                snackbarHostState.showSnackbar("Ошибка при сохранении PIN-кода") 
+            }
+        }
+    }
+
+    // Show PIN authentication screens if not authenticated
+    if (!isAuthenticated) {
+        when (currentScreen) {
+            Screen.PIN_AUTH -> {
+                PinAuthScreen(
+                    isSetup = false,
+                    onPinEntered = ::onPinEntered
+                )
+                return
+            }
+            Screen.PIN_SETUP -> {
+                PinAuthScreen(
+                    isSetup = true,
+                    onPinEntered = { /* unused for setup */ },
+                    onPinConfirmed = ::onPinSetup
+                )
+                return
+            }
+            else -> {}
+        }
+    }
+
     // highlightMatches moved to top-level
 
     Scaffold(
@@ -232,6 +294,9 @@ fun AppScreen(repo: VaultRepository) {
                         }
                         Screen.SETTINGS -> {
                             Text("Настройки")
+                        }
+                        else -> {
+                            Text("LogiPass")
                         }
                     }
                 },
@@ -367,6 +432,9 @@ fun AppScreen(repo: VaultRepository) {
                     onItemsUpdated = { newItems -> items = newItems },
                     modifier = Modifier.padding(innerPadding)
                 )
+            }
+            Screen.PIN_AUTH, Screen.PIN_SETUP -> {
+                // These screens are handled above before reaching the Scaffold
             }
         }
     }
