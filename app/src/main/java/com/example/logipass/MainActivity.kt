@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -396,9 +397,9 @@ fun ServiceCard(
             if (expanded) {
                 Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedActionButton(icon = Icons.Outlined.Add, label = "Учетка", onClick = onAddCredential)
-                        OutlinedActionButton(icon = Icons.Outlined.Edit, label = "Сервис", onClick = onEditService)
-                        OutlinedActionButton(icon = Icons.Outlined.Delete, label = "Удалить", onClick = onDeleteService)
+                        IconActionButton(icon = Icons.Outlined.Add, contentDescription = "Добавить учетную запись", onClick = onAddCredential)
+                        IconActionButton(icon = Icons.Outlined.Edit, contentDescription = "Редактировать сервис", onClick = onEditService)
+                        IconActionButton(icon = Icons.Outlined.Delete, contentDescription = "Удалить сервис", onClick = onDeleteService)
                     }
                     item.credentials.orEmpty().forEachIndexed { idx, cred ->
                         CredentialRow(
@@ -455,8 +456,8 @@ fun CredentialRow(cred: Credential, onEdit: () -> Unit, onDelete: () -> Unit) {
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedActionButton(icon = Icons.Outlined.Edit, label = "Редакт.", onClick = onEdit)
-                OutlinedActionButton(icon = Icons.Outlined.Delete, label = "Удалить", onClick = onDelete)
+                IconActionButton(icon = Icons.Outlined.Edit, contentDescription = "Редактировать учетную запись", onClick = onEdit)
+                IconActionButton(icon = Icons.Outlined.Delete, contentDescription = "Удалить учетную запись", onClick = onDelete)
             }
         }
     }
@@ -521,9 +522,20 @@ data class ConfirmDialogState(
 )
 
 @Composable
-private fun OutlinedActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    androidx.compose.material3.OutlinedButton(onClick = onClick) {
+private fun OutlinedActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    androidx.compose.material3.OutlinedButton(onClick = onClick, modifier = modifier) {
         Icon(icon, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
         Text(label)
+    }
+}
+
+@Composable
+private fun IconActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, contentDescription: String, onClick: () -> Unit) {
+    androidx.compose.material3.OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.size(48.dp),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Icon(icon, contentDescription = contentDescription)
     }
 }
