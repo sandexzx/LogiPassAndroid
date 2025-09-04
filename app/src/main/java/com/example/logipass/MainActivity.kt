@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
@@ -68,6 +69,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -109,6 +112,7 @@ fun AppScreen(repo: VaultRepository) {
     var currentScreen by remember { mutableStateOf(Screen.MAIN) }
     var expandedItems by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var backPressedTime by remember { mutableStateOf(0L) }
+    var searchInput by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -155,10 +159,11 @@ fun AppScreen(repo: VaultRepository) {
 
     fun normalize(s: String?): String = s?.lowercase()?.trim() ?: ""
 
-    fun matchesQuery(item: ServiceItem, q: String): Boolean {
-        val query = normalize(q)
-        if (query.isBlank()) return true
-        val tokens = query.split(Regex("\\s+")).filter { it.isNotBlank() }
+    fun tokenizeQuery(q: String): List<String> = q.lowercase().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+
+    val queryTokens by remember(searchQuery) { derivedStateOf { tokenizeQuery(searchQuery) } }
+
+    fun matchesQuery(item: ServiceItem, tokens: List<String>): Boolean {
         if (tokens.isEmpty()) return true
 
         val name = normalize(item.service)
@@ -172,12 +177,19 @@ fun AppScreen(repo: VaultRepository) {
         }
     }
 
-    val visibleIndices = remember(items, searchQuery) {
-        items.mapIndexedNotNull { index, si -> if (matchesQuery(si, searchQuery)) index else null }
+    // Debounce heavy filtering to keep typing snappy
+    LaunchedEffect(searchInput) {
+        // Small debounce keeps UI responsive on fast typing
+        delay(150)
+        searchQuery = searchInput
+    }
+
+    val visibleIndices = remember(items, queryTokens) {
+        items.mapIndexedNotNull { index, si -> if (matchesQuery(si, queryTokens)) index else null }
     }
 
     val visibleItems = remember(items, visibleIndices) {
-        items.filterIndexed { index, _ -> index in visibleIndices }
+        visibleIndices.map { idx -> items[idx] }
     }
 
     // highlightMatches moved to top-level
@@ -191,15 +203,15 @@ fun AppScreen(repo: VaultRepository) {
                         Screen.MAIN -> {
                             val focusManager = LocalFocusManager.current
                             TextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
+                                value = searchInput,
+                                onValueChange = { searchInput = it },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("Поиск по сервисам и логинам") },
                                 singleLine = true,
                                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                                 trailingIcon = {
-                                    if (searchQuery.isNotBlank()) {
-                                        IconButton(onClick = { searchQuery = ""; focusManager.clearFocus() }) {
+                                    if (searchInput.isNotBlank()) {
+                                        IconButton(onClick = { searchInput = ""; focusManager.clearFocus() }) {
                                             Icon(Icons.Outlined.Close, contentDescription = "Очистить поиск")
                                         }
                                     }
@@ -257,8 +269,8 @@ fun AppScreen(repo: VaultRepository) {
     ) { innerPadding ->
         when (currentScreen) {
             Screen.MAIN -> {
-                val expandedFiltered = remember(expandedItems, visibleIndices, searchQuery) {
-                    if (searchQuery.isNotBlank()) {
+                val expandedFiltered = remember(expandedItems, visibleIndices, queryTokens) {
+                    if (queryTokens.isNotEmpty()) {
                         visibleItems.indices.toSet()
                     } else {
                         expandedItems.mapNotNull { original -> visibleIndices.indexOf(original).takeIf { it >= 0 } }.toSet()
@@ -477,7 +489,9 @@ fun ServiceCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize()
+            .animateContentSize(
+                animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy)
+            )
             .clickable { onExpandedChange(!expanded) },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
@@ -491,8 +505,10 @@ fun ServiceCard(
             }
             AnimatedVisibility(
                 visible = expanded,
-                enter = fadeIn(animationSpec = tween(120)) + expandVertically(),
-                exit = fadeOut(animationSpec = tween(120)) + shrinkVertically()
+                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
+                        expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy)),
+                exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
+                        shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy))
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
