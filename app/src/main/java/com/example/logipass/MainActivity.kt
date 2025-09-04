@@ -1,7 +1,9 @@
 package com.example.logipass
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
@@ -35,6 +37,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.system.exitProcess
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -71,9 +77,35 @@ class MainActivity : ComponentActivity() {
 fun AppScreen(repo: VaultRepository) {
     var items by remember { mutableStateOf<List<ServiceItem>>(emptyList()) }
     var currentScreen by remember { mutableStateOf(Screen.MAIN) }
+    var expandedItems by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var backPressedTime by remember { mutableStateOf(0L) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         items = repo.loadFromAppStorage()
+    }
+
+    BackHandler {
+        when (currentScreen) {
+            Screen.SETTINGS -> {
+                currentScreen = Screen.MAIN
+            }
+            Screen.MAIN -> {
+                if (expandedItems.isNotEmpty()) {
+                    expandedItems = emptySet()
+                } else {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - backPressedTime < 2000) {
+                        (context as? Activity)?.finishAffinity()
+                        exitProcess(0)
+                    } else {
+                        backPressedTime = currentTime
+                        Toast.makeText(context, "Нажмите назад еще раз для выхода", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -109,6 +141,14 @@ fun AppScreen(repo: VaultRepository) {
             Screen.MAIN -> {
                 ServiceList(
                     items = items,
+                    expandedItems = expandedItems,
+                    onItemExpanded = { index, expanded ->
+                        expandedItems = if (expanded) {
+                            expandedItems + index
+                        } else {
+                            expandedItems - index
+                        }
+                    },
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -125,25 +165,37 @@ fun AppScreen(repo: VaultRepository) {
 }
 
 @Composable
-fun ServiceList(items: List<ServiceItem>, modifier: Modifier = Modifier) {
+fun ServiceList(
+    items: List<ServiceItem>, 
+    expandedItems: Set<Int>,
+    onItemExpanded: (Int, Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(items) { item ->
-            ServiceCard(item)
+        items(items.size) { index ->
+            ServiceCard(
+                item = items[index],
+                expanded = expandedItems.contains(index),
+                onExpandedChange = { expanded -> onItemExpanded(index, expanded) }
+            )
         }
     }
 }
 
 @Composable
-fun ServiceCard(item: ServiceItem) {
-    var expanded by remember { mutableStateOf(false) }
+fun ServiceCard(
+    item: ServiceItem, 
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded },
+            .clickable { onExpandedChange(!expanded) },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -224,7 +276,9 @@ fun PreviewServiceList() {
                         Credential("login", "pass", "Мой основной аккаунт")
                     )
                 )
-            )
+            ),
+            expandedItems = setOf(0),
+            onItemExpanded = { _, _ -> }
         )
     }
 }
