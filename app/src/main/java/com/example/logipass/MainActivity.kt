@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
@@ -39,6 +40,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,10 +56,25 @@ import kotlin.system.exitProcess
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
 import android.widget.Toast
 import com.example.logipass.data.VaultRepository
 import com.example.logipass.model.Credential
@@ -162,6 +180,8 @@ fun AppScreen(repo: VaultRepository) {
         items.filterIndexed { index, _ -> index in visibleIndices }
     }
 
+    // highlightMatches moved to top-level
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -169,11 +189,33 @@ fun AppScreen(repo: VaultRepository) {
                 title = {
                     when (currentScreen) {
                         Screen.MAIN -> {
-                            androidx.compose.material3.TextField(
+                            val focusManager = LocalFocusManager.current
+                            TextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
+                                modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("Поиск по сервисам и логинам") },
-                                singleLine = true
+                                singleLine = true,
+                                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                                trailingIcon = {
+                                    if (searchQuery.isNotBlank()) {
+                                        IconButton(onClick = { searchQuery = ""; focusManager.clearFocus() }) {
+                                            Icon(Icons.Outlined.Close, contentDescription = "Очистить поиск")
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(24.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    disabledIndicatorColor = Color.Transparent,
+                                    cursorColor = MaterialTheme.colorScheme.primary
+                                ),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
                             )
                         }
                         Screen.SETTINGS -> {
@@ -190,11 +232,6 @@ fun AppScreen(repo: VaultRepository) {
                 },
                 actions = {
                     if (currentScreen == Screen.MAIN) {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Outlined.Close, contentDescription = "Очистить поиск")
-                            }
-                        }
                         IconButton(onClick = { currentScreen = Screen.SETTINGS }) {
                             Icon(Icons.Filled.Settings, contentDescription = "Настройки")
                         }
@@ -220,12 +257,17 @@ fun AppScreen(repo: VaultRepository) {
     ) { innerPadding ->
         when (currentScreen) {
             Screen.MAIN -> {
-                val expandedFiltered = remember(expandedItems, visibleIndices) {
-                    expandedItems.mapNotNull { original -> visibleIndices.indexOf(original).takeIf { it >= 0 } }.toSet()
+                val expandedFiltered = remember(expandedItems, visibleIndices, searchQuery) {
+                    if (searchQuery.isNotBlank()) {
+                        visibleItems.indices.toSet()
+                    } else {
+                        expandedItems.mapNotNull { original -> visibleIndices.indexOf(original).takeIf { it >= 0 } }.toSet()
+                    }
                 }
                 ServiceList(
                     items = visibleItems,
                     expandedItems = expandedFiltered,
+                    searchQuery = searchQuery,
                     onItemExpanded = { index, expanded ->
                         val originalIndex = visibleIndices[index]
                         expandedItems = if (expanded) expandedItems + originalIndex else expandedItems - originalIndex
@@ -388,8 +430,9 @@ fun AppScreen(repo: VaultRepository) {
 
 @Composable
 fun ServiceList(
-    items: List<ServiceItem>, 
+    items: List<ServiceItem>,
     expandedItems: Set<Int>,
+    searchQuery: String,
     onItemExpanded: (Int, Boolean) -> Unit,
     onAddCredential: (serviceIndex: Int) -> Unit,
     onEditService: (serviceIndex: Int) -> Unit,
@@ -407,6 +450,7 @@ fun ServiceList(
             ServiceCard(
                 item = items[index],
                 expanded = expandedItems.contains(index),
+                searchQuery = searchQuery,
                 onExpandedChange = { expanded -> onItemExpanded(index, expanded) },
                 onAddCredential = { onAddCredential(index) },
                 onEditService = { onEditService(index) },
@@ -422,6 +466,7 @@ fun ServiceList(
 fun ServiceCard(
     item: ServiceItem,
     expanded: Boolean,
+    searchQuery: String,
     onExpandedChange: (Boolean) -> Unit,
     onAddCredential: () -> Unit,
     onEditService: () -> Unit,
@@ -432,15 +477,23 @@ fun ServiceCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize()
             .clickable { onExpandedChange(!expanded) },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text((item.service ?: "Без названия").trim(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            val title = (item.service ?: "Без названия").trim()
+            val titleAnnotated = highlightMatches(title, searchQuery)
+            Text(titleAnnotated, style = MaterialTheme.typography.titleMedium)
             item.description?.takeIf { it.isNotBlank() }?.let { desc ->
-                Text(desc.trim(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val descAnn = highlightMatches(desc.trim(), searchQuery)
+                Text(descAnn, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(animationSpec = tween(120)) + expandVertically(),
+                exit = fadeOut(animationSpec = tween(120)) + shrinkVertically()
+            ) {
                 Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconActionButton(icon = Icons.Outlined.Add, contentDescription = "Добавить учетную запись", onClick = onAddCredential)
@@ -450,6 +503,7 @@ fun ServiceCard(
                     item.credentials.orEmpty().forEachIndexed { idx, cred ->
                         CredentialRow(
                             cred = cred,
+                            searchQuery = searchQuery,
                             onEdit = { onEditCredential(idx) },
                             onDelete = { onDeleteCredential(idx) }
                         )
@@ -461,7 +515,7 @@ fun ServiceCard(
 }
 
 @Composable
-fun CredentialRow(cred: Credential, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun CredentialRow(cred: Credential, searchQuery: String, onEdit: () -> Unit, onDelete: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showPassword by remember { mutableStateOf(false) }
@@ -469,7 +523,12 @@ fun CredentialRow(cred: Credential, onEdit: () -> Unit, onDelete: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Логин: ${cred.username ?: ""}", style = MaterialTheme.typography.bodyMedium)
+                val usernameRaw = cred.username ?: ""
+                val loginAnnotated = buildAnnotatedString {
+                    append("Логин: ")
+                    append(highlightMatches(usernameRaw, searchQuery))
+                }
+                Text(loginAnnotated, style = MaterialTheme.typography.bodyMedium)
                 IconButton(onClick = {
                     clipboard.setText(AnnotatedString(cred.username ?: ""))
                     Toast.makeText(context, "Логин скопирован", Toast.LENGTH_SHORT).show()
@@ -498,7 +557,8 @@ fun CredentialRow(cred: Credential, onEdit: () -> Unit, onDelete: () -> Unit) {
             }
 
             cred.additional_info?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val infoAnn = highlightMatches(it, searchQuery)
+                Text(infoAnn, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -532,6 +592,7 @@ fun PreviewServiceList() {
                 )
             ),
             expandedItems = setOf(0),
+            searchQuery = "",
             onItemExpanded = { _, _ -> },
             onAddCredential = {},
             onEditService = {},
@@ -572,6 +633,44 @@ private fun OutlinedActionButton(icon: androidx.compose.ui.graphics.vector.Image
     androidx.compose.material3.OutlinedButton(onClick = onClick, modifier = modifier) {
         Icon(icon, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
         Text(label)
+    }
+}
+
+// Top-level helper to highlight query matches within text
+@Composable
+fun highlightMatches(text: String, query: String): AnnotatedString {
+    if (query.isBlank()) return AnnotatedString(text)
+    val src = text
+    val lower = src.lowercase()
+    val tokens = query.lowercase().trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (tokens.isEmpty()) return AnnotatedString(text)
+
+    val styles = mutableListOf<Pair<Int, Int>>()
+    for (t in tokens) {
+        var idx = lower.indexOf(t)
+        while (idx >= 0) {
+            styles.add(idx to (idx + t.length))
+            idx = lower.indexOf(t, idx + 1)
+        }
+    }
+    if (styles.isEmpty()) return AnnotatedString(text)
+
+    // Merge overlapping ranges
+    val merged = styles.sortedBy { it.first }.fold(mutableListOf<Pair<Int, Int>>()) { acc, r ->
+        if (acc.isEmpty()) acc.add(r) else {
+            val last = acc.last()
+            if (r.first <= last.second) {
+                acc[acc.lastIndex] = last.first to maxOf(last.second, r.second)
+            } else acc.add(r)
+        }
+        acc
+    }
+
+    return buildAnnotatedString {
+        append(src)
+        merged.forEach { (s, e) ->
+            addStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold), s, e)
+        }
     }
 }
 
