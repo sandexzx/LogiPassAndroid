@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
@@ -90,6 +91,7 @@ fun AppScreen(repo: VaultRepository) {
     var currentScreen by remember { mutableStateOf(Screen.MAIN) }
     var expandedItems by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var backPressedTime by remember { mutableStateOf(0L) }
+    var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -133,17 +135,51 @@ fun AppScreen(repo: VaultRepository) {
         }
     }
 
+    fun normalize(s: String?): String = s?.lowercase()?.trim() ?: ""
+
+    fun matchesQuery(item: ServiceItem, q: String): Boolean {
+        val query = normalize(q)
+        if (query.isBlank()) return true
+        val tokens = query.split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return true
+
+        val name = normalize(item.service)
+        val desc = normalize(item.description)
+        val usernames = item.credentials.orEmpty().map { normalize(it.username) }
+
+        return tokens.all { token ->
+            name.contains(token) ||
+            desc.contains(token) ||
+            usernames.any { it.contains(token) }
+        }
+    }
+
+    val visibleIndices = remember(items, searchQuery) {
+        items.mapIndexedNotNull { index, si -> if (matchesQuery(si, searchQuery)) index else null }
+    }
+
+    val visibleItems = remember(items, visibleIndices) {
+        items.filterIndexed { index, _ -> index in visibleIndices }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { 
-                    Text(
-                        when (currentScreen) {
-                            Screen.MAIN -> "LogiPass"
-                            Screen.SETTINGS -> "Настройки"
+                title = {
+                    when (currentScreen) {
+                        Screen.MAIN -> {
+                            androidx.compose.material3.TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Поиск по сервисам и логинам") },
+                                singleLine = true
+                            )
                         }
-                    ) 
+                        Screen.SETTINGS -> {
+                            Text("Настройки")
+                        }
+                    }
                 },
                 navigationIcon = {
                     if (currentScreen == Screen.SETTINGS) {
@@ -154,6 +190,11 @@ fun AppScreen(repo: VaultRepository) {
                 },
                 actions = {
                     if (currentScreen == Screen.MAIN) {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Очистить поиск")
+                            }
+                        }
                         IconButton(onClick = { currentScreen = Screen.SETTINGS }) {
                             Icon(Icons.Filled.Settings, contentDescription = "Настройки")
                         }
@@ -179,17 +220,18 @@ fun AppScreen(repo: VaultRepository) {
     ) { innerPadding ->
         when (currentScreen) {
             Screen.MAIN -> {
+                val expandedFiltered = remember(expandedItems, visibleIndices) {
+                    expandedItems.mapNotNull { original -> visibleIndices.indexOf(original).takeIf { it >= 0 } }.toSet()
+                }
                 ServiceList(
-                    items = items,
-                    expandedItems = expandedItems,
+                    items = visibleItems,
+                    expandedItems = expandedFiltered,
                     onItemExpanded = { index, expanded ->
-                        expandedItems = if (expanded) {
-                            expandedItems + index
-                        } else {
-                            expandedItems - index
-                        }
+                        val originalIndex = visibleIndices[index]
+                        expandedItems = if (expanded) expandedItems + originalIndex else expandedItems - originalIndex
                     },
-                    onAddCredential = { serviceIndex ->
+                    onAddCredential = { filteredIndex ->
+                        val serviceIndex = visibleIndices[filteredIndex]
                         val service = items[serviceIndex]
                         credentialDialog = CredentialDialogState(
                             mode = EditMode.Add,
@@ -200,7 +242,8 @@ fun AppScreen(repo: VaultRepository) {
                             initialInfo = ""
                         )
                     },
-                    onEditService = { serviceIndex ->
+                    onEditService = { filteredIndex ->
+                        val serviceIndex = visibleIndices[filteredIndex]
                         val service = items[serviceIndex]
                         serviceDialog = ServiceDialogState(
                             mode = EditMode.Edit,
@@ -209,7 +252,8 @@ fun AppScreen(repo: VaultRepository) {
                             initialDescription = service.description ?: ""
                         )
                     },
-                    onDeleteService = { serviceIndex ->
+                    onDeleteService = { filteredIndex ->
+                        val serviceIndex = visibleIndices[filteredIndex]
                         val title = items[serviceIndex].service ?: "Без названия"
                         confirmDialog = ConfirmDialogState(
                             title = "Удалить сервис",
@@ -225,7 +269,8 @@ fun AppScreen(repo: VaultRepository) {
                             }
                         )
                     },
-                    onEditCredential = { serviceIndex, credentialIndex ->
+                    onEditCredential = { filteredIndex, credentialIndex ->
+                        val serviceIndex = visibleIndices[filteredIndex]
                         val creds = items[serviceIndex].credentials.orEmpty()
                         val cred = creds.getOrNull(credentialIndex)
                         if (cred == null) {
@@ -241,7 +286,8 @@ fun AppScreen(repo: VaultRepository) {
                             )
                         }
                     },
-                    onDeleteCredential = { serviceIndex, credentialIndex ->
+                    onDeleteCredential = { filteredIndex, credentialIndex ->
+                        val serviceIndex = visibleIndices[filteredIndex]
                         val title = items[serviceIndex].service ?: "Без названия"
                         confirmDialog = ConfirmDialogState(
                             title = "Удалить учетную запись",
