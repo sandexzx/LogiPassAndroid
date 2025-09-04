@@ -18,6 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Visibility
@@ -29,6 +32,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -38,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.system.exitProcess
@@ -54,6 +61,9 @@ import com.example.logipass.model.Credential
 import com.example.logipass.model.ServiceItem
 import com.example.logipass.ui.screens.SettingsScreen
 import com.example.logipass.ui.theme.LogiPassTheme
+import com.example.logipass.ui.components.CredentialDialog
+import com.example.logipass.ui.components.ServiceDialog
+import com.example.logipass.ui.components.ConfirmDialog
 
 enum class Screen {
     MAIN, SETTINGS
@@ -81,6 +91,12 @@ fun AppScreen(repo: VaultRepository) {
     var backPressedTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Dialog states
+    var serviceDialog by remember { mutableStateOf<ServiceDialogState?>(null) }
+    var credentialDialog by remember { mutableStateOf<CredentialDialogState?>(null) }
+    var confirmDialog by remember { mutableStateOf<ConfirmDialogState?>(null) }
 
     LaunchedEffect(Unit) {
         items = repo.loadFromAppStorage()
@@ -105,6 +121,14 @@ fun AppScreen(repo: VaultRepository) {
                     }
                 }
             }
+        }
+    }
+
+    fun persist(newItems: List<ServiceItem>, message: String? = null) {
+        items = newItems
+        repo.saveToAppStorage(newItems)
+        message?.let {
+            coroutineScope.launch { snackbarHostState.showSnackbar(it) }
         }
     }
 
@@ -135,7 +159,22 @@ fun AppScreen(repo: VaultRepository) {
                     }
                 }
             )
-        }
+        },
+        floatingActionButton = {
+            if (currentScreen == Screen.MAIN) {
+                FloatingActionButton(onClick = {
+                    serviceDialog = ServiceDialogState(
+                        mode = EditMode.Add,
+                        index = null,
+                        initialService = "",
+                        initialDescription = ""
+                    )
+                }) {
+                    Icon(Icons.Outlined.Add, contentDescription = "Добавить сервис")
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         when (currentScreen) {
             Screen.MAIN -> {
@@ -148,6 +187,74 @@ fun AppScreen(repo: VaultRepository) {
                         } else {
                             expandedItems - index
                         }
+                    },
+                    onAddCredential = { serviceIndex ->
+                        val service = items[serviceIndex]
+                        credentialDialog = CredentialDialogState(
+                            mode = EditMode.Add,
+                            serviceIndex = serviceIndex,
+                            credentialIndex = null,
+                            initialUsername = "",
+                            initialPassword = "",
+                            initialInfo = ""
+                        )
+                    },
+                    onEditService = { serviceIndex ->
+                        val service = items[serviceIndex]
+                        serviceDialog = ServiceDialogState(
+                            mode = EditMode.Edit,
+                            index = serviceIndex,
+                            initialService = service.service ?: "",
+                            initialDescription = service.description ?: ""
+                        )
+                    },
+                    onDeleteService = { serviceIndex ->
+                        val title = items[serviceIndex].service ?: "Без названия"
+                        confirmDialog = ConfirmDialogState(
+                            title = "Удалить сервис",
+                            message = "Удалить сервис \"$title\" со всеми учетными записями?",
+                            onConfirm = {
+                                val newItems = items.toMutableList().also { it.removeAt(serviceIndex) }
+                                persist(newItems, "Сервис удален")
+                                // пересчитаем индексы раскрытых карточек после удаления
+                                expandedItems = expandedItems
+                                    .filterNot { it == serviceIndex }
+                                    .map { if (it > serviceIndex) it - 1 else it }
+                                    .toSet()
+                            }
+                        )
+                    },
+                    onEditCredential = { serviceIndex, credentialIndex ->
+                        val creds = items[serviceIndex].credentials.orEmpty()
+                        val cred = creds.getOrNull(credentialIndex)
+                        if (cred == null) {
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Учетная запись не найдена") }
+                        } else {
+                            credentialDialog = CredentialDialogState(
+                                mode = EditMode.Edit,
+                                serviceIndex = serviceIndex,
+                                credentialIndex = credentialIndex,
+                                initialUsername = cred.username ?: "",
+                                initialPassword = cred.password ?: "",
+                                initialInfo = cred.additional_info ?: ""
+                            )
+                        }
+                    },
+                    onDeleteCredential = { serviceIndex, credentialIndex ->
+                        val title = items[serviceIndex].service ?: "Без названия"
+                        confirmDialog = ConfirmDialogState(
+                            title = "Удалить учетную запись",
+                            message = "Удалить учетную запись из \"$title\"?",
+                            onConfirm = {
+                                val newCredentials = items[serviceIndex].credentials.orEmpty().toMutableList().also {
+                                    if (credentialIndex in it.indices) it.removeAt(credentialIndex)
+                                }
+                                val newItems = items.toMutableList().also {
+                                    it[serviceIndex] = it[serviceIndex].copy(credentials = newCredentials)
+                                }
+                                persist(newItems, "Учетная запись удалена")
+                            }
+                        )
                     },
                     modifier = Modifier.padding(innerPadding)
                 )
@@ -162,6 +269,74 @@ fun AppScreen(repo: VaultRepository) {
             }
         }
     }
+
+    // Dialogs
+    serviceDialog?.let { state ->
+        ServiceDialog(
+            title = if (state.mode == EditMode.Add) "Новый сервис" else "Редактировать сервис",
+            initialService = state.initialService,
+            initialDescription = state.initialDescription,
+            onDismiss = { serviceDialog = null },
+            onConfirm = { service, description ->
+                if (service.isBlank()) {
+                    coroutineScope.launch { snackbarHostState.showSnackbar("Введите название сервиса") }
+                } else {
+                    val newItems = items.toMutableList()
+                    if (state.mode == EditMode.Add) {
+                        newItems.add(ServiceItem(service = service.trim(), description = description.trim(), credentials = emptyList()))
+                        persist(newItems, "Сервис добавлен")
+                    } else {
+                        val idx = state.index!!
+                        val old = newItems[idx]
+                        newItems[idx] = old.copy(service = service.trim(), description = description.trim())
+                        persist(newItems, "Сервис обновлен")
+                    }
+                    serviceDialog = null
+                }
+            }
+        )
+    }
+
+    credentialDialog?.let { state ->
+        CredentialDialog(
+            title = if (state.mode == EditMode.Add) "Новая учетная запись" else "Редактировать учетную запись",
+            initialUsername = state.initialUsername,
+            initialPassword = state.initialPassword,
+            initialInfo = state.initialInfo,
+            onDismiss = { credentialDialog = null },
+            onConfirm = { username, password, info ->
+                if (username.isBlank() || password.isBlank()) {
+                    coroutineScope.launch { snackbarHostState.showSnackbar("Логин и пароль обязательны") }
+                } else {
+                    val sIdx = state.serviceIndex
+                    val newItems = items.toMutableList()
+                    val oldService = newItems[sIdx]
+                    val newCreds = (oldService.credentials ?: emptyList()).toMutableList()
+                    if (state.mode == EditMode.Add) {
+                        newCreds.add(Credential(username.trim(), password, info.ifBlank { null }))
+                    } else {
+                        val cIdx = state.credentialIndex!!
+                        newCreds[cIdx] = Credential(username.trim(), password, info.ifBlank { null })
+                    }
+                    newItems[sIdx] = oldService.copy(credentials = newCreds)
+                    persist(newItems, if (state.mode == EditMode.Add) "Учетная запись добавлена" else "Учетная запись обновлена")
+                    credentialDialog = null
+                }
+            }
+        )
+    }
+
+    confirmDialog?.let { state ->
+        ConfirmDialog(
+            title = state.title,
+            message = state.message,
+            onDismiss = { confirmDialog = null },
+            onConfirm = {
+                state.onConfirm()
+                confirmDialog = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -169,6 +344,11 @@ fun ServiceList(
     items: List<ServiceItem>, 
     expandedItems: Set<Int>,
     onItemExpanded: (Int, Boolean) -> Unit,
+    onAddCredential: (serviceIndex: Int) -> Unit,
+    onEditService: (serviceIndex: Int) -> Unit,
+    onDeleteService: (serviceIndex: Int) -> Unit,
+    onEditCredential: (serviceIndex: Int, credentialIndex: Int) -> Unit,
+    onDeleteCredential: (serviceIndex: Int, credentialIndex: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -180,7 +360,12 @@ fun ServiceList(
             ServiceCard(
                 item = items[index],
                 expanded = expandedItems.contains(index),
-                onExpandedChange = { expanded -> onItemExpanded(index, expanded) }
+                onExpandedChange = { expanded -> onItemExpanded(index, expanded) },
+                onAddCredential = { onAddCredential(index) },
+                onEditService = { onEditService(index) },
+                onDeleteService = { onDeleteService(index) },
+                onEditCredential = { credIndex -> onEditCredential(index, credIndex) },
+                onDeleteCredential = { credIndex -> onDeleteCredential(index, credIndex) }
             )
         }
     }
@@ -188,9 +373,14 @@ fun ServiceList(
 
 @Composable
 fun ServiceCard(
-    item: ServiceItem, 
+    item: ServiceItem,
     expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit
+    onExpandedChange: (Boolean) -> Unit,
+    onAddCredential: () -> Unit,
+    onEditService: () -> Unit,
+    onDeleteService: () -> Unit,
+    onEditCredential: (Int) -> Unit,
+    onDeleteCredential: (Int) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -199,12 +389,23 @@ fun ServiceCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(item.service, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(item.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text((item.service ?: "Без названия").trim(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            item.description?.takeIf { it.isNotBlank() }?.let { desc ->
+                Text(desc.trim(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (expanded) {
                 Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item.credentials.forEach { cred ->
-                        CredentialRow(cred)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedActionButton(icon = Icons.Outlined.Add, label = "Учетка", onClick = onAddCredential)
+                        OutlinedActionButton(icon = Icons.Outlined.Edit, label = "Сервис", onClick = onEditService)
+                        OutlinedActionButton(icon = Icons.Outlined.Delete, label = "Удалить", onClick = onDeleteService)
+                    }
+                    item.credentials.orEmpty().forEachIndexed { idx, cred ->
+                        CredentialRow(
+                            cred = cred,
+                            onEdit = { onEditCredential(idx) },
+                            onDelete = { onDeleteCredential(idx) }
+                        )
                     }
                 }
             }
@@ -213,7 +414,7 @@ fun ServiceCard(
 }
 
 @Composable
-fun CredentialRow(cred: Credential) {
+fun CredentialRow(cred: Credential, onEdit: () -> Unit, onDelete: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showPassword by remember { mutableStateOf(false) }
@@ -221,9 +422,9 @@ fun CredentialRow(cred: Credential) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Логин: ${cred.username}", style = MaterialTheme.typography.bodyMedium)
+                Text("Логин: ${cred.username ?: ""}", style = MaterialTheme.typography.bodyMedium)
                 IconButton(onClick = {
-                    clipboard.setText(AnnotatedString(cred.username))
+                    clipboard.setText(AnnotatedString(cred.username ?: ""))
                     Toast.makeText(context, "Логин скопирован", Toast.LENGTH_SHORT).show()
                 }) {
                     Icon(Icons.Outlined.ContentCopy, contentDescription = "Скопировать логин")
@@ -231,7 +432,8 @@ fun CredentialRow(cred: Credential) {
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                val passwordText = if (showPassword) cred.password else "••••••"
+                val passwordRaw = cred.password ?: ""
+                val passwordText = if (showPassword) passwordRaw else "••••••"
                 Text("Пароль: $passwordText", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = { showPassword = !showPassword }) {
@@ -240,7 +442,7 @@ fun CredentialRow(cred: Credential) {
                         Icon(icon, contentDescription = desc)
                     }
                     IconButton(onClick = {
-                        clipboard.setText(AnnotatedString(cred.password))
+                        clipboard.setText(AnnotatedString(passwordRaw))
                         Toast.makeText(context, "Пароль скопирован", Toast.LENGTH_SHORT).show()
                     }) {
                         Icon(Icons.Outlined.ContentCopy, contentDescription = "Скопировать пароль")
@@ -248,8 +450,13 @@ fun CredentialRow(cred: Credential) {
                 }
             }
 
-            cred.additional_info?.let {
+            cred.additional_info?.takeIf { it.isNotBlank() }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedActionButton(icon = Icons.Outlined.Edit, label = "Редакт.", onClick = onEdit)
+                OutlinedActionButton(icon = Icons.Outlined.Delete, label = "Удалить", onClick = onDelete)
             }
         }
     }
@@ -278,7 +485,45 @@ fun PreviewServiceList() {
                 )
             ),
             expandedItems = setOf(0),
-            onItemExpanded = { _, _ -> }
+            onItemExpanded = { _, _ -> },
+            onAddCredential = {},
+            onEditService = {},
+            onDeleteService = {},
+            onEditCredential = { _, _ -> },
+            onDeleteCredential = { _, _ -> }
         )
+    }
+}
+
+// Helper UI bits and local state models
+enum class EditMode { Add, Edit }
+
+data class ServiceDialogState(
+    val mode: EditMode,
+    val index: Int?,
+    val initialService: String,
+    val initialDescription: String
+)
+
+data class CredentialDialogState(
+    val mode: EditMode,
+    val serviceIndex: Int,
+    val credentialIndex: Int?,
+    val initialUsername: String,
+    val initialPassword: String,
+    val initialInfo: String
+)
+
+data class ConfirmDialogState(
+    val title: String,
+    val message: String,
+    val onConfirm: () -> Unit
+)
+
+@Composable
+private fun OutlinedActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    androidx.compose.material3.OutlinedButton(onClick = onClick) {
+        Icon(icon, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+        Text(label)
     }
 }
