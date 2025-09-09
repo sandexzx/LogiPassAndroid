@@ -25,10 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Close
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,9 +44,8 @@ fun PinAuthScreen(
     var isConfirmingPin by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
-    
-    val coroutineScope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
+    var showErrorPopup by remember { mutableStateOf(false) }
+    var popupMessage by remember { mutableStateOf("") }
     
     val haptic = LocalHapticFeedback.current
     
@@ -55,6 +53,13 @@ fun PinAuthScreen(
         if (showError) {
             kotlinx.coroutines.delay(2000)
             showError = false
+        }
+    }
+    
+    LaunchedEffect(showErrorPopup) {
+        if (showErrorPopup) {
+            kotlinx.coroutines.delay(3000)
+            showErrorPopup = false
         }
     }
     
@@ -81,9 +86,8 @@ fun PinAuthScreen(
                             enteredPin = ""
                             confirmPin = ""
                             isConfirmingPin = false
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar(errorMessage, duration = SnackbarDuration.Long)
-                            }
+                            popupMessage = errorMessage
+                            showErrorPopup = true
                         }
                     }
                 }
@@ -98,9 +102,8 @@ fun PinAuthScreen(
                         enteredPin = ""
                         showError = true
                         errorMessage = "Неверный PIN-код"
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar(errorMessage, duration = SnackbarDuration.Long)
-                        }
+                        popupMessage = errorMessage
+                        showErrorPopup = true
                     }
                 }
             }
@@ -220,12 +223,18 @@ fun PinAuthScreen(
             }
         }
 
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-        )
+        if (showErrorPopup) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp)
+            ) {
+                CustomErrorPopup(
+                    message = popupMessage,
+                    onDismiss = { showErrorPopup = false }
+                )
+            }
+        }
     }
 }
 
@@ -372,6 +381,59 @@ private fun KeypadButton(
             contentAlignment = Alignment.Center
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+private fun CustomErrorPopup(
+    message: String,
+    onDismiss: () -> Unit
+) {
+    val scale by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessVeryLow
+        ),
+        label = "popup_scale"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth(0.8f)
+            .scale(scale),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Закрыть",
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
         }
     }
 }
