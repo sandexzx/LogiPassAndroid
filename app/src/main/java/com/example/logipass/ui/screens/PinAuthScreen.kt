@@ -25,6 +25,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +36,7 @@ fun PinAuthScreen(
     isSetup: Boolean = false,
     onPinEntered: (String) -> Unit,
     onPinConfirmed: (String) -> Unit = {},
+    validatePin: (String) -> Boolean = { true },
     title: String = if (isSetup) "Установите PIN-код" else "Введите PIN-код",
     subtitle: String = if (isSetup) "Придумайте 4-значный PIN-код для защиты приложения" else "Введите ваш PIN-код для доступа к данным"
 ) {
@@ -40,6 +45,9 @@ fun PinAuthScreen(
     var isConfirmingPin by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     
     val haptic = LocalHapticFeedback.current
     
@@ -73,6 +81,9 @@ fun PinAuthScreen(
                             enteredPin = ""
                             confirmPin = ""
                             isConfirmingPin = false
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(errorMessage, duration = SnackbarDuration.Long)
+                            }
                         }
                     }
                 }
@@ -81,7 +92,16 @@ fun PinAuthScreen(
             if (enteredPin.length < 4) {
                 enteredPin += number
                 if (enteredPin.length == 4) {
-                    onPinEntered(enteredPin)
+                    if (validatePin(enteredPin)) {
+                        onPinEntered(enteredPin)
+                    } else {
+                        enteredPin = ""
+                        showError = true
+                        errorMessage = "Неверный PIN-код"
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar(errorMessage, duration = SnackbarDuration.Long)
+                        }
+                    }
                 }
             }
         }
@@ -191,20 +211,6 @@ fun PinAuthScreen(
                     isError = showError
                 )
 
-                AnimatedVisibility(
-                    visible = showError,
-                    enter = slideInVertically() + fadeIn(),
-                    exit = slideOutVertically() + fadeOut()
-                ) {
-                    Text(
-                        text = errorMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 12.dp)
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(20.dp))
 
                 NumericKeypad(
@@ -213,6 +219,13 @@ fun PinAuthScreen(
                 )
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        )
     }
 }
 

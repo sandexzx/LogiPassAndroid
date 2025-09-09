@@ -208,14 +208,8 @@ fun AppScreen(repo: VaultRepository, pinManager: PinManager) {
 
     // PIN authentication logic
     fun onPinEntered(pin: String) {
-        if (pinManager.verifyPin(pin)) {
-            isAuthenticated = true
-            currentScreen = Screen.MAIN
-        } else {
-            coroutineScope.launch { 
-                snackbarHostState.showSnackbar("Неверный PIN-код") 
-            }
-        }
+        isAuthenticated = true
+        currentScreen = Screen.MAIN
     }
     
     fun onPinSetup(pin: String) {
@@ -238,7 +232,8 @@ fun AppScreen(repo: VaultRepository, pinManager: PinManager) {
             Screen.PIN_AUTH -> {
                 PinAuthScreen(
                     isSetup = false,
-                    onPinEntered = ::onPinEntered
+                    onPinEntered = ::onPinEntered,
+                    validatePin = { pin -> pinManager.verifyPin(pin) }
                 )
                 return
             }
