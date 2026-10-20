@@ -10,7 +10,8 @@ import java.io.File
 
 class AppContainer(context: Context) {
     private val app = context.applicationContext
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** Outlives activities: UI writes run here so rotating or leaving a screen never cancels a save. */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val vault = VaultRepository(FileVaultStore(File(app.noBackupFilesDir, "vault.bin")))
     val auth = AuthManager(app, vault, KeystoreKeys(), scope)
     val backup = BackupManager(app, vault)
