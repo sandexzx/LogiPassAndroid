@@ -2,13 +2,17 @@ package com.example.logipass.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -35,14 +39,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -55,7 +68,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.logipass.ui.theme.AppType
 import com.example.logipass.ui.theme.Style
+import com.kyant.backdrop.Backdrop
 import com.kyant.shapes.RoundedRectangle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** iOS-style tap feedback: dims while pressed instead of a ripple. */
 fun Modifier.tappable(
@@ -135,17 +151,21 @@ fun SurfaceCard(
     }
 }
 
-/** Floating glass capsule for bars: icon and/or text. [tint] = filled accent button. */
+/**
+ * Floating glass capsule for bars: icon and/or text. [tint] = filled accent button.
+ * Inside [AppScaffold]'s content, pass [LocalCardBackdrop]: the bar backdrop exists only in the bar and overlay slots.
+ */
 @Composable
 fun GlassButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = Color.Unspecified,
     height: Dp = 44.dp,
+    backdrop: Backdrop = LocalBarBackdrop.current,
     content: @Composable RowScope.() -> Unit,
 ) {
     Glass(
-        backdrop = LocalBarBackdrop.current,
+        backdrop = backdrop,
         style = Style.barGlass,
         tint = tint,
         onClick = onClick,
@@ -481,6 +501,81 @@ fun InlineIconButton(
         contentAlignment = Alignment.Center,
     ) {
         AppIcon(icon, tint, size = 19.dp)
+    }
+}
+
+/**
+ * [InlineIconButton] for copy actions: on tap the copy glyph gives way to a green check that
+ * draws itself in over a soft green halo, holds for a moment, then fades back.
+ */
+@Composable
+fun CopyButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val style = Style
+    var copies by remember { mutableIntStateOf(0) }
+    val shown = remember { Animatable(0f) }
+    val stroke = remember { Animatable(0f) }
+    LaunchedEffect(copies) {
+        if (copies == 0) return@LaunchedEffect
+        stroke.snapTo(0f)
+        launch { shown.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 700f)) }
+        stroke.animateTo(1f, tween(280, delayMillis = 60, easing = FastOutSlowInEasing))
+        delay(1200)
+        shown.animateTo(0f, tween(220))
+    }
+    Box(
+        modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .drawBehind { drawCircle(style.positive.copy(alpha = 0.14f * shown.value.coerceIn(0f, 1f))) }
+            .tappable {
+                copies++
+                onClick()
+            }
+            .then(
+                if (contentDescription != null) {
+                    Modifier.semantics { this.contentDescription = contentDescription }
+                } else {
+                    Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        AppIcon(
+            Icons.Copy,
+            style.textSecondary,
+            size = 19.dp,
+            modifier = Modifier.graphicsLayer {
+                val t = shown.value.coerceIn(0f, 1f)
+                alpha = 1f - t
+                scaleX = 1f - 0.4f * t
+                scaleY = scaleX
+            },
+        )
+        // Same geometry as Icons.Check, drawn here so the stroke can be trimmed.
+        Canvas(
+            Modifier
+                .size(19.dp)
+                .graphicsLayer {
+                    alpha = shown.value.coerceIn(0f, 1f)
+                    scaleX = 0.6f + 0.4f * shown.value
+                    scaleY = scaleX
+                },
+        ) {
+            val k = size.width / 24f
+            val check = Path().apply {
+                moveTo(5f * k, 12.5f * k)
+                lineTo(9.5f * k, 17f * k)
+                lineTo(19f * k, 7f * k)
+            }
+            val measure = PathMeasure().apply { setPath(check, false) }
+            val drawn = Path()
+            measure.getSegment(0f, measure.length * stroke.value, drawn, true)
+            drawPath(drawn, style.positive, style = Stroke(2.4f * k, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
     }
 }
 

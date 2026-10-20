@@ -290,7 +290,9 @@ fun VaultScreen(
                     terms = terms,
                     revealed = revealed,
                     actions = cardActions(match),
-                    modifier = Modifier.animateItem(),
+                    // No placement animation: cards below must track an expanding card's edge
+                    // frame by frame, not chase it on their own spring and slide over it.
+                    modifier = Modifier.animateItem(placementSpec = null),
                 )
             }
         }

@@ -50,6 +50,7 @@ import com.example.logipass.ui.components.AppIcon
 import com.example.logipass.ui.components.AppScaffold
 import com.example.logipass.ui.components.GlassButton
 import com.example.logipass.ui.components.Icons
+import com.example.logipass.ui.components.LocalCardBackdrop
 import com.example.logipass.ui.components.PasswordInput
 import com.example.logipass.ui.components.PrimaryButton
 import com.example.logipass.ui.components.SheetAction
@@ -306,7 +307,11 @@ fun LockScreen(container: AppContainer, state: AuthState.Locked, toast: ToastSta
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.height(24.dp))
                 if (state.biometricEnabled) {
-                    GlassButton(onClick = { scope.launch { biometricUnlock() } }, height = 52.dp) {
+                    GlassButton(
+                        onClick = { scope.launch { biometricUnlock() } },
+                        height = 52.dp,
+                        backdrop = LocalCardBackdrop.current,
+                    ) {
                         AppIcon(Icons.Fingerprint, style.accentText, size = 24.dp)
                         Text("Войти по отпечатку", style = AppType.headline, color = style.accentText)
                     }

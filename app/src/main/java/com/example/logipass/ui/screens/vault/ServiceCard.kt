@@ -2,14 +2,18 @@ package com.example.logipass.ui.screens.vault
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,12 +34,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.logipass.model.Credential
 import com.example.logipass.model.Service
 import com.example.logipass.ui.components.AppIcon
+import com.example.logipass.ui.components.CopyButton
 import com.example.logipass.ui.components.Icons
 import com.example.logipass.ui.components.InlineIconButton
 import com.example.logipass.ui.components.SecondaryButton
@@ -114,10 +120,16 @@ fun ServiceCard(
             )
         }
 
+        // The card opens from its header down, uncovering the accounts in place; they fade in and
+        // settle a beat later. Closing fades them first, then folds the card back up.
+        val rise = with(LocalDensity.current) { 8.dp.roundToPx() }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(spring(dampingRatio = 0.85f, stiffness = 400f)) + fadeIn(),
-            exit = shrinkVertically(spring(dampingRatio = 1f, stiffness = 600f)) + fadeOut(),
+            enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = 380f), expandFrom = Alignment.Top) +
+                fadeIn(tween(220, delayMillis = 60)) +
+                slideInVertically(tween(280, delayMillis = 60, easing = FastOutSlowInEasing)) { rise },
+            exit = fadeOut(tween(120)) +
+                shrinkVertically(tween(240, delayMillis = 60, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top),
         ) {
             Column(
                 Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
@@ -192,8 +204,7 @@ private fun CredentialBlock(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                InlineIconButton(
-                    Icons.Copy,
+                CopyButton(
                     onClick = { actions.onCopyUsername(credential) },
                     contentDescription = "Скопировать логин",
                 )
@@ -225,8 +236,7 @@ private fun CredentialBlock(
                     onClick = { actions.onToggleReveal(credential) },
                     contentDescription = if (revealed) "Скрыть пароль" else "Показать пароль",
                 )
-                InlineIconButton(
-                    Icons.Copy,
+                CopyButton(
                     onClick = { actions.onCopyPassword(credential) },
                     contentDescription = "Скопировать пароль",
                 )
@@ -268,25 +278,34 @@ private fun CountPill(count: Int) {
     }
 }
 
-private val monogramColors = listOf(
-    Color(0xFF0A6CFF), Color(0xFF5856D6), Color(0xFFAF52DE), Color(0xFFE8365D),
-    Color(0xFFF08A00), Color(0xFF28A745), Color(0xFF1AA6C4), Color(0xFF00A99D),
+// Muted inks: low saturation, mid-dark, so the tile reads as a tint of the glass, not a sticker.
+private val monogramInks = listOf(
+    Color(0xFF3E5A7E), // slate blue
+    Color(0xFF4F6B57), // sage
+    Color(0xFF85683F), // sand
+    Color(0xFF6E5374), // plum
+    Color(0xFF8A5862), // dusty rose
+    Color(0xFF3F686B), // sea grey
+    Color(0xFF58598A), // lavender grey
+    Color(0xFF66653F), // olive
 )
 
-/** Rounded square with the service's first letter; the color is stable per name. */
+/** Rounded square with the service's first letter in a muted tint; the hue is stable per name. */
 @Composable
 fun Monogram(name: String, modifier: Modifier = Modifier) {
     val letter = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "•"
-    val base = remember(name) {
-        monogramColors[Math.floorMod(name.trim().lowercase().hashCode(), monogramColors.size)]
+    val ink = remember(name) {
+        monogramInks[Math.floorMod(name.trim().lowercase().hashCode(), monogramInks.size)]
     }
+    val shape = RoundedCornerShape(13.dp)
     Box(
         modifier
             .size(44.dp)
-            .clip(RoundedCornerShape(13.dp))
-            .background(Brush.verticalGradient(listOf(base.copy(alpha = 0.82f), base))),
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(ink.copy(alpha = 0.10f), ink.copy(alpha = 0.17f))))
+            .border(0.5.dp, ink.copy(alpha = 0.16f), shape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(letter, style = AppType.title3.copy(fontWeight = FontWeight.SemiBold), color = Color.White)
+        Text(letter, style = AppType.title3.copy(fontWeight = FontWeight.SemiBold), color = ink)
     }
 }
