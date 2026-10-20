@@ -1,16 +1,17 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "com.example.logipass"
-    compileSdk = 35
+    compileSdk { version = release(37) }
 
     defaultConfig {
         applicationId = "com.example.logipass"
-        minSdk = 24
-        targetSdk = 35
+        minSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -19,7 +20,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            optimization {
+                enable = true
+                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -32,6 +36,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -51,8 +56,14 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.gson)
-    implementation(libs.androidx.material.icons.extended)
+    implementation(libs.coroutines.android)
+    implementation(libs.serialization.json)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.kyant.backdrop)
+    implementation(libs.kyant.shapes)
+    testImplementation(libs.coroutines.test)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
