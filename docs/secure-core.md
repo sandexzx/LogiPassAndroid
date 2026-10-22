@@ -1,6 +1,6 @@
 # Secure core
 
-The application container is created once by `LogiPassApplication`. The placeholder activity intentionally has no authentication or vault UI yet. A future UI should observe `container.auth.state` and `container.vault.services` and use the typed results in `session/AuthManager.kt` and `data/BackupCodec.kt`.
+The application container is created once by `LogiPassApplication` and passed by `MainActivity` to the Compose root `ui/LogiPassApp.kt`. The root observes `container.auth.state` and routes to `SetupScreen` (`NeedsSetup`), `LockScreen` (`Locked`) or the unlocked session with the vault and settings screens. Screens observe `container.vault.services` and handle the typed results from `session/AuthManager.kt` and `data/BackupCodec.kt`.
 
 ## Storage and sessions
 
@@ -26,6 +26,6 @@ Orphan encrypted files and malformed key files are renamed with a `.corrupt-<tim
 
 Screenshots, recents screenshots, cloud backup and device transfer are disabled. Sensitive clipboard copies carry the sensitive flag and expire after 45 seconds unless another clip replaced them. Keystore encryption uses provider-generated nonces, as required by Android's randomized-encryption policy.
 
-No passwords, vault contents, data keys or clipboard contents are logged. Debug builds log only KDF timing, plus non-sensitive operational failures. PBKDF2 timing must be measured on the target device once UI testing is available; desktop JVM tests use a low iteration count and do not provide a device performance measurement.
+No passwords, vault contents, data keys or clipboard contents are logged. Debug builds log only KDF timing, plus non-sensitive operational failures. PBKDF2 timing must be measured on the target device; desktop JVM tests use a low iteration count and do not provide a device performance measurement.
 
-JVM coverage includes AEAD tamper/AAD checks, nested password wrapping with a fake device key, export codecs, legacy mapping, throttle schedule, repository CRUD/order/restore/replacement, persistence failures and a lock during a blocked write. Keystore authorization, biometric enrollment changes, lifecycle timing/deep sleep, clipboard restrictions and screenshot prevention require device tests after the UI is available.
+JVM coverage includes AEAD tamper/AAD checks, nested password wrapping with a fake device key, export codecs, legacy mapping, throttle schedule, repository CRUD/order/restore/replacement, persistence failures and a lock during a blocked write. Keystore authorization, biometric enrollment changes, lifecycle timing/deep sleep, clipboard restrictions and screenshot prevention require device tests.
